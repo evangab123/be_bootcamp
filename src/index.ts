@@ -1,12 +1,44 @@
 import { ponder } from "ponder:registry";
-import { transfer } from "ponder:schema";
-import { holder } from "ponder:schema";
+import { holder, token, transfer } from "ponder:schema";
+import { Erc20Abi } from "../abis/erc20Abi";
 
 ponder.on("ERC20:Transfer", async ({ event, context }) => {
   // Transfer (index_topic_1 address from, index_topic_2 address to, uint256 value)
   const { from, to, value } = event.args;
   const { number, timestamp } = event.block;
   const { hash } = event.transaction;
+
+  const [name, symbol, decimals] = await context.client.multicall({
+    allowFailure: false,
+    contracts: [
+      {
+        abi: Erc20Abi,
+        address: event.log.address,
+        functionName: "name",
+      },
+      {
+        abi: Erc20Abi,
+        address: event.log.address,
+        functionName: "symbol",
+      },
+      {
+        abi: Erc20Abi,
+        address: event.log.address,
+        functionName: "decimals",
+      },
+    ],
+  });
+
+  await context.db
+    .insert(token)
+    .values({
+      id: event.log.address,
+      address: event.log.address,
+      name: name,
+      symbol: symbol,
+      decimals: decimals,
+    })
+    .onConflictDoNothing();
 
   const id = `${event.transaction.hash}-${event.log.logIndex}`;
   await context.db.insert(transfer).values({
@@ -17,6 +49,7 @@ ponder.on("ERC20:Transfer", async ({ event, context }) => {
     timestamp,
     blocknumber: number,
     txHash: hash,
+    tokenId: event.log.address,
   });
 
   // balance[from] -= value;
