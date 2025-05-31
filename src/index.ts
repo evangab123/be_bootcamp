@@ -1,6 +1,9 @@
 import { ponder } from "ponder:registry";
 import { holder, token, transfer } from "ponder:schema";
 import { Erc20Abi } from "../abis/erc20Abi";
+import { VaultAbi } from "../abis/vaultAbi";
+import { vaultSnapshot } from "../ponder.schema";
+import { formatUnits } from "viem";
 
 ponder.on("ERC20:Transfer", async ({ event, context }) => {
   // Transfer (index_topic_1 address from, index_topic_2 address to, uint256 value)
@@ -59,6 +62,7 @@ ponder.on("ERC20:Transfer", async ({ event, context }) => {
       id: from,
       address: from,
       balance: -value,
+      tokenId: event.log.address,
     })
     .onConflictDoUpdate((row) => ({
       balance: row.balance - value,
@@ -71,8 +75,83 @@ ponder.on("ERC20:Transfer", async ({ event, context }) => {
       id: to,
       address: to,
       balance: value,
+      tokenId: event.log.address,
     })
     .onConflictDoUpdate((row) => ({
       balance: row.balance + value,
+    }));
+});
+
+ponder.on("Vault:Deposit", async ({ event, context }) => {
+  // Deposit (address user, uint256 amount, uint256 shares)
+  const { amount, shares } = event.args;
+  const { timestamp } = event.block;
+
+  // id
+  const normalizedTimestamp = (timestamp / 3600n) * 3600n;
+  // tvl
+  const additionalTvl = amount;
+
+  // price
+  // 6 decimals / 18 decimals
+  const amountNormalized = formatUnits(amount, 6);
+  const shareNormalized = formatUnits(shares, 18);
+  const price = Number(amountNormalized) / Number(shareNormalized);
+
+  await context.db
+    .insert(vaultSnapshot)
+    .values({
+      id: normalizedTimestamp.toString(),
+      normalizedTimestamp: normalizedTimestamp,
+      open: price.toString(),
+      high: price.toString(),
+      low: price.toString(),
+      close: price.toString(),
+      volume: amount,
+      tvl: additionalTvl,
+    })
+    .onConflictDoUpdate((row) => ({
+      high: Math.max(Number(row.high), price).toString(),
+      low: Math.min(Number(row.low), price).toString(),
+      close: price.toString(),
+      volume: row.volume + amount,
+      tvl: row.tvl + additionalTvl,
+    }));
+});
+
+ponder.on("Vault:Withdraw", async ({ event, context }) => {
+  // Deposit (address user, uint256 amount, uint256 shares)
+  const { amount, shares } = event.args;
+  const { timestamp } = event.block;
+
+  // id
+  const normalizedTimestamp = (timestamp / 3600n) * 3600n;
+  // tvl
+  const additionalTvl = amount;
+
+  // price
+  // 6 decimals / 18 decimals
+  const amountNormalized = formatUnits(amount, 6);
+  const shareNormalized = formatUnits(shares, 18);
+  const price = Number(amountNormalized) / Number(shareNormalized);
+
+  await context.db
+    .insert(vaultSnapshot)
+    .values({
+      id: normalizedTimestamp.toString(),
+      normalizedTimestamp: normalizedTimestamp,
+      open: price.toString(),
+      high: price.toString(),
+      low: price.toString(),
+      close: price.toString(),
+      volume: amount,
+      tvl: additionalTvl,
+    })
+    .onConflictDoUpdate((row) => ({
+      high: Math.max(Number(row.high), price).toString(),
+      low: Math.min(Number(row.low), price).toString(),
+      close: price.toString(),
+      volume: row.volume + amount,
+      tvl: row.tvl + additionalTvl,
     }));
 });

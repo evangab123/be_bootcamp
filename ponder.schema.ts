@@ -1,13 +1,5 @@
-import { onchainTable } from "ponder";
-import { relations } from "ponder";
-
-// Data requirement:
-// Tx Hash
-// From (address)
-// To (address)
-// Amount
-// Timestamp
-// Block number
+import { normalize } from "path";
+import { onchainTable, relations } from "ponder";
 
 export const token = onchainTable("token", (t) => ({
   id: t.text().primaryKey(),
@@ -19,6 +11,7 @@ export const token = onchainTable("token", (t) => ({
 
 export const tokenRelations = relations(token, ({ many }) => ({
   transfers: many(transfer),
+  holders: many(holder),
 }));
 
 export const transfer = onchainTable("transfer", (t) => ({
@@ -40,5 +33,21 @@ export const holder = onchainTable("holder", (t) => ({
   id: t.text().primaryKey(),
   address: t.text().notNull(),
   balance: t.bigint().notNull(),
+  tokenId: t.text().notNull(),
 }));
 
+export const holderRelations = relations(holder, ({ one }) => ({
+  token: one(token, { fields: [holder.tokenId], references: [token.id] }),
+}));
+
+export const vaultSnapshot = onchainTable("vault_snapshot", (t) => ({
+  // normalizedTimestamp
+  id: t.text().primaryKey(),
+  normalizedTimestamp: t.bigint().notNull(),
+  open: t.numeric().notNull(),
+  high: t.numeric().notNull(),
+  low: t.numeric().notNull(),
+  close: t.numeric().notNull(),
+  volume: t.bigint().notNull(),
+  tvl: t.bigint().notNull(),
+}));
