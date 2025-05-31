@@ -4,6 +4,8 @@ import { Erc20Abi } from "../abis/erc20Abi";
 import { VaultAbi } from "../abis/vaultAbi";
 import { vaultSnapshot } from "../ponder.schema";
 import { formatUnits } from "viem";
+import {position} from "../ponder.schema";
+import { parseUnits } from "viem";
 
 ponder.on("ERC20:Transfer", async ({ event, context }) => {
   // Transfer (index_topic_1 address from, index_topic_2 address to, uint256 value)
@@ -84,7 +86,7 @@ ponder.on("ERC20:Transfer", async ({ event, context }) => {
 
 ponder.on("Vault:Deposit", async ({ event, context }) => {
   // Deposit (address user, uint256 amount, uint256 shares)
-  const { amount, shares } = event.args;
+  const { user, amount, shares } = event.args;
   const { timestamp } = event.block;
 
   // id
@@ -117,11 +119,38 @@ ponder.on("Vault:Deposit", async ({ event, context }) => {
       volume: row.volume + amount,
       tvl: row.tvl + additionalTvl,
     }));
+
+  // Update position
+  const userPosition = await context.db.find(position, {
+    id: user,
+  });
+
+  let entryPrice = price;
+  if (userPosition) {
+    const oldPositionValue =
+      Number(userPosition.balance) * Number(userPosition.entryPrice);
+    const newPositionValue = Number(shares) * Number(price);
+    entryPrice = (newPositionValue + oldPositionValue) / Number(shares);
+  }
+
+  await context.db
+    .insert(position)
+    .values({
+      id: user,
+      address: user,
+      balance: shares,
+      entryPrice: price.toString(),
+      realizedPnl: 0n,
+    })
+    .onConflictDoUpdate((row) => ({
+      entryPrice: entryPrice.toString(),
+      balance: row.balance + shares,
+    }));
 });
 
 ponder.on("Vault:Withdraw", async ({ event, context }) => {
   // Deposit (address user, uint256 amount, uint256 shares)
-  const { amount, shares } = event.args;
+  const { user, amount, shares } = event.args;
   const { timestamp } = event.block;
 
   // id
@@ -153,5 +182,32 @@ ponder.on("Vault:Withdraw", async ({ event, context }) => {
       close: price.toString(),
       volume: row.volume + amount,
       tvl: row.tvl + additionalTvl,
+    }));
+
+  // Update position
+  const userPosition = await context.db.find(position, {
+    id: user,
+  });
+
+  let realizedPnl = 0n;
+  if (userPosition) {
+    const effectivePrice = price - Number(userPosition.entryPrice);
+    const effectivePnlInShare =
+      effectivePrice * Number(formatUnits(shares, 18));
+    realizedPnl = parseUnits(effectivePnlInShare.toString(), 6);
+  }
+
+  await context.db
+    .insert(position)
+    .values({
+      id: user,
+      address: user,
+      balance: shares,
+      entryPrice: price.toString(),
+      realizedPnl: 0n,
+    })
+    .onConflictDoUpdate((row) => ({
+      balance: row.balance - shares,
+      realizedPnl: row.realizedPnl + realizedPnl,
     }));
 });
