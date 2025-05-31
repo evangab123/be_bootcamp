@@ -17,3 +17,9 @@ export const transfer = onchainTable("transfer", (t) => ({
   timestamp: t.bigint().notNull(),
   blocknumber: t.bigint().notNull(),
 }));
+
+export const holder = onchainTable("holder", (t) => ({
+  id: t.text().primaryKey(),
+  address: t.text().notNull(),
+  balance: t.bigint().notNull(),
+}));
